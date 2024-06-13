@@ -12,19 +12,26 @@ st.session_state.setdefault("glycan", None)
 st.session_state.setdefault("scaffold", None)
 st.session_state.setdefault("scaffold_glycosylated", None)
 st.session_state.setdefault("glyco_sites", [])
+st.session_state.setdefault("scaffold_type", "scaffold")
+st.session_state.setdefault("glycans_to_extend", [])
+st.session_state.setdefault("available_sequons", gl.available_sequons())
+st.session_state.setdefault("scaffold_conformers", [])
+st.session_state.setdefault("scaffold_graph_edges", None)
+st.session_state.setdefault("shield", None)
 
 SUPPORTED_RESIDUES = set(
     (
         "ASN",
         "SER",
         "THR",
+        "CER",
     )
 )
 
 
 def make_glycan(glycan_name, glycan_input):
     try:
-        G = gl.glycan(glycan_input, glycan_name)
+        G = gl.glycan(glycan_input.strip(), glycan_name.strip())
         st.session_state["glycan"] = G
         st.session_state["glycans"][glycan_name] = G
         st.session_state["glycan_optimized"] = False
@@ -56,27 +63,29 @@ def load_glycan(glycan_file, infer_bonds):
         return None
 
 
-def load_scaffold(scaffold_file, infer_bonds, infer_existing_glycans):
+def load_scaffold(scaffold_file, infer_existing_glycans, type: str = "scaffold"):
     try:
-        f = NamedTemporaryFile(suffix=".pdb", delete=False)
-        with open(f, "w") as f:
-            f.write(scaffold_file.getvalue().decode("utf-8"))
+        pdb = scaffold_file.getvalue().decode("utf-8")
 
-        G = gl.Scaffold.from_pdb(f)
+        if type == "protein":
+            G = gl.Protein._from_pdb_string(pdb)
+        elif type == "membrane":
+            G = gl.Membrane._from_pdb_string(pdb)
+        else:
+            G = gl.Scaffold._from_pdb_string(pdb)
 
-        if G.count_bonds() == 0 or infer_bonds:
-            G.reindex()
-            G.infer_bonds(restrict_residues=False)
+        st.session_state["scaffold_type"] = type
 
         if infer_existing_glycans:
             G.find_glycans()
+            for glycan in G.glycans:
+                st.session_state["glycans"][glycan.id] = glycan
 
         st.session_state["scaffold"] = G
         st.session_state["scaffold_glycosylated"] = None
         st.session_state["glyco_sites"] = []
         st.session_state["scaffold_conformers"] = []
         st.session_state["scaffold_graph_edges"] = None
-        f.close()
         return G
     except Exception as e:
         st.error(f"Error: {e}")
@@ -91,6 +100,18 @@ def extend_glycan(glycan_input):
     except Exception as e:
         st.error(f"Error: {e}")
         return None
+
+
+def extend_glycans_on_scaffold(glycan_input):
+
+    S = st.session_state["scaffold_glycosylated"]
+    for glycan in st.session_state["glycans_to_extend"]:
+        try:
+            S.extend_glycan(glycan, glycan_input.strip())
+        except Exception as e:
+            st.error(f"Error on glycan {glycan}: {e}")
+            raise e
+    st.session_state["scaffold_graph_edges"] = None
 
 
 def show_glycan_2d3d(container=st):
@@ -115,8 +136,8 @@ def show_glycan_2d3d(container=st):
     # columns[1].plotly_chart(G.draw(atoms=False).figure, use_container_width=True)
 
 
-def show_scaffold_3d(type: str = None, container=st):
-    S = st.session_state["scaffold"]
+def show_scaffold_3d(type: str = None, S=None, container=st):
+    S = S or st.session_state["scaffold"]
     if S is None:
         return
     if type == "protein":
@@ -125,13 +146,14 @@ def show_scaffold_3d(type: str = None, container=st):
         v = S.py3dmol("sphere", "beige")
     else:
         v = S.py3dmol()
-    for glycan in S.glycans.values():
-        v.add(glycan, style={"stick": {}})
     stmol.showmol(v.view)
 
-    # v = gl.utils.visual.MoleculeViewer3D()
-    # v.draw_edges(*G.get_residue_connections(), showlegend=False)
-    # container.plotly_chart(v.figure, use_container_width=True)
+
+def show_protein_snfg(container=st):
+    S = st.session_state["scaffold"]
+    if S is None:
+        return
+    container.pyplot(S.snfg().fig)
 
 
 def optimize_glycan(container=st):
@@ -256,116 +278,14 @@ def export_glycan(filename, export_conformers, container=st):
             container.success(f"Model saved to {filename}_conf{i}.pdb")
 
 
-glycosite_find_modes = ["Existing Sequon", "Custom Sequon", "Residue Numbers"]
-
-
-def find_glyco_sites(container=st):
-
-    c1, c2 = container.columns((1, 2))
-    method = c1.selectbox(
-        "Method",
-        glycosite_find_modes,
-        help="Select the method to use for finding glycosylation sites.",
-    )
-    st.session_state["glycosite_find_method"] = method
-
-    if method == glycosite_find_modes[0]:
-        existing_sequons = gl.available_sequons()
-        sequon = c1.selectbox(
-            "Select sequon",
-            existing_sequons,
-            help="Select a pre-existing sequon to use for finding glycosylation sites.",
-        )
-        st.session_state["glycosite_find_sequon"] = sequon
-
-    elif method == glycosite_find_modes[1]:
-        sequon = c1.text_input(
-            "Custom sequon",
-            placeholder="(N)(?=[A-OQ-Z][ST])",
-            help="Input a custom sequon to use for finding glycosylation sites. This needs to have one capturing group that matches the glycosylated residue.",
-        )
-        st.session_state["glycosite_find_sequon"] = sequon
-
-    elif method == glycosite_find_modes[2]:
-        residues = c1.text_area(
-            "Residue numbers",
-            placeholder="18, 75, 342, ...",
-            help="Enter a list of residue numbers to identify glycosylation sites. Separate the numbers by commas or newlines.",
-        )
-        if residues:
-            residues = [int(i) for i in residues.replace(",", "\n").split("\n")]
-            st.session_state["glycosite_find_residues"] = residues
-
-    show_sites = c1.checkbox(
-        "Show glycosylation sites",
-        value=False,
-        help="Show the identified glycosylation sites.",
-    )
-
-    find_button = c1.button("Find Glycosylation Sites")
-    S = st.session_state["scaffold"]
-    if find_button:
-
-        if method == glycosite_find_modes[0] or method == glycosite_find_modes[1]:
-            sites = S.find_glycosylation_sites(
-                sequon=st.session_state["glycosite_find_sequon"]
-            )
-            s = []
-            for chain in sites:
-                s.extend(sites[chain])
-            st.session_state["glyco_sites"] = s
-        elif method == glycosite_find_modes[2]:
-            sites = S.get_residues(*st.session_state["glycosite_find_residues"])
-            st.session_state["glyco_sites"] = sites
-
-    if find_button and show_sites:
-        sites = st.session_state.get("glyco_sites", [])
-        if sites:
-
-            v = S.py3dmol("cartoon", "spectrum")
-            sites_mol = gl.Molecule.empty()
-            sites_mol.add_residues(*(i.copy() for i in sites))
-            sites_mol.infer_bonds()
-            v.view.addModel(bam.utils.pdb.encode_pdb(sites_mol), "pdb")
-            v.view.setStyle(
-                {"model": 1},
-                {
-                    "sphere": {"color": "orange", "opacity": 0.8},
-                },
-            )
-            # v.add(_v)
-            # v.add(sites_mol, style={"sphere": {"color": "orange"}})
-
-            with c2:
-                stmol.showmol(v.view)
-        else:
-            c2.warning("No glycosylation sites found (yet).")
-
-    e2 = c2.expander("Glycosylation Sites", expanded=not show_sites)
-    sites = st.session_state.get("glyco_sites", {})
-    if sites:
-
-        e2.dataframe(
-            {
-                "Chain": [i.parent.id for i in sites],
-                "Residue": [i.resname for i in sites],
-                "Number": [i.serial_number for i in sites],
-            }
-        )
-
-        for s in sites:
-            if s.resname not in SUPPORTED_RESIDUES:
-                e2.error(
-                    f"Residue {s.resname} at position {s.serial_number} is not supported for glycosylation."
-                )
-
-
 def attach_glycan():
 
     G = st.session_state["glycan"]
     S = st.session_state["scaffold"]
-    S_glyco = st.session_state.get("scaffold_glycosylated", None)
-    if S_glyco is None or S_glyco.id != S.id:
+    S_glyco = st.session_state["scaffold_glycosylated"]
+    if st.session_state["scaffold_glycosylated"] is None:
+        st.session_state["scaffold_glycosylated"] = st.session_state["scaffold"].copy()
+    elif S_glyco.id != S.id or S.count_atoms() > S_glyco.count_atoms():
         S_glyco = S.copy()
         st.session_state["scaffold_glycosylated"] = S_glyco
 
@@ -378,16 +298,67 @@ def attach_glycan():
 
     _sites = {}
     for s in sites:
+        if any(s is root.parent for root in S.get_glycans().keys()):
+            st.info(f"Skipping site {s} as it is already glycosylated.")
+            continue
+
         if s.resname not in _sites:
             _sites[s.resname] = []
         _sites[s.resname].append(s)
 
+    hydrogenator = gl.structural.Hydrogenator()
     for name, residues in _sites.items():
         if name not in SUPPORTED_RESIDUES:
             st.error(f"Residue {name} is not supported for glycosylation.")
             continue
 
+        # first make sure that all residues are not yet occupied
+        residues = [
+            i
+            for i in residues
+            if not any(i is root.parent for root in S.get_glycans().keys())
+        ]
+
+        # now we must make sure that all the scaffold residues are also
+        # filled with bonds and the target atoms have hydrogen neighbors
+        link = gl.get_linkage(name + "-glyco")
+
+        to_delete = []
+        for residue in residues:
+            anchor = S_glyco.get_atom(link._stitch_ref_atoms[0], residue=residue)
+            if len(S_glyco.get_neighbors(anchor)) == 0 or not link.can_be_target(
+                S_glyco, residue
+            ):
+                S_glyco.infer_bonds_for(residue)
+                if not S_glyco.get_hydrogen(anchor):
+                    hydrogenator.add_hydrogens(anchor, S_glyco)
+                    if (
+                        len(
+                            S_glyco.get_neighbors(
+                                anchor, filter=lambda x: x.element == "H"
+                            )
+                        )
+                        == 2
+                    ):
+                        S_glyco.remove_atoms(S_glyco.get_hydrogen(anchor))
+                H = S_glyco.get_hydrogen(anchor)
+                if H is None:
+                    st.error(
+                        f"Could not find or make a suitable hydrogen for atom {anchor} for residue {residue} to attach glycan."
+                    )
+                    to_delete.append(residue)
+                    continue
+                H.id = link.deletes[0][0]
+
+        residues = [i for i in residues if i not in to_delete]
+
+        if len(residues) == 0:
+            continue
+
         S_glyco.attach(mol=G, residues=residues, inplace=True, chain="new")
+
+    # make sure to reset since now the system has changed
+    st.session_state["scaffold_graph_edges"] = None
 
 
 def show_glycosylated_3d(type: str, container=st):
@@ -395,12 +366,12 @@ def show_glycosylated_3d(type: str, container=st):
     if S is None:
         return
     if type == "protein":
-        v = S.py3dmol("cartoon", "spectrum")
+        v = S.py3dmol("cartoon", "spectrum", glycans=False)
     elif type == "membrane":
-        v = S.py3dmol("sphere")
+        v = S.py3dmol("sphere", glycans=False)
     else:
         v = S.py3dmol()
-    for glycan in S.glycans.values():
+    for glycan in S.glycans:
         v.add(glycan, style={"stick": {}})
     stmol.showmol(v.view)
 
@@ -452,6 +423,12 @@ def optimize_scaffold(container=st):
         help="Select the number of parallel optimizations to run. Parallel optimization can make the process faster but because the optimizations will be run independently and later combined it will be less accurate than optimizing the entire system at once (if only optimizing for one single conformation; this does not apply if using parallel optimization to generate multiple conformers).",
     )
 
+    only_clashing = columns[0].checkbox(
+        "Only clashing glycans",
+        value=True,
+        help="Only optimize glycans that are clashing with the scaffold or themselves.",
+    )
+
     use_numba = columns[0].checkbox(
         "Use Numba",
         value=False,
@@ -476,6 +453,13 @@ def optimize_scaffold(container=st):
         _scipy_hyperparams(hyperparam_ext)
 
     optimize_button = columns[0].button("Optimize Model")
+    clear_cache = columns[0].button(
+        "Clear Cache",
+        help="Clear the cache of the scaffold graph (if you make changes to the scaffold and the graph is not adjusted automatically).",
+    )
+    if clear_cache:
+        st.session_state["scaffold_graph_edges"] = None
+
     if optimize_button:
 
         if use_numba:
@@ -486,14 +470,13 @@ def optimize_scaffold(container=st):
         ):
             t1 = time()
             st.write("Preparing graph...")
-            current_graph = st.session_state.get("scaffold_graph_edges", None)
+            current_graph = st.session_state["scaffold_graph_edges"]
             S = st.session_state["scaffold_glycosylated"]
             if not current_graph or current_graph[0] != S.id:
-                if len(S._internal_residues) == 0:
-                    S.hollow_out()
                 graph, edges = gl.optimizers.make_scaffold_graph(
                     S,
-                    only_clashing_glycans=False,
+                    only_clashing_glycans=only_clashing,
+                    include_root=True,
                     slice=4,
                 )
                 st.session_state["scaffold_graph_edges"] = (
@@ -507,6 +490,11 @@ def optimize_scaffold(container=st):
             st.write(
                 f"Graph has {len(graph.nodes)} nodes and {len(edges)} edges to optimize."
             )
+            if len(edges) == 0:
+                st.error(
+                    "No edges to optimize! Try setting the 'only clashing glycans' option to False to optimize all glycans."
+                )
+                return
 
             st.write("Preparing environment...")
             env = methods[method](
@@ -520,6 +508,7 @@ def optimize_scaffold(container=st):
                     st.write(
                         f"Running {n_parallel} independent parallel optimizations for different conformations."
                     )
+                    env = gl.optimizers.ScaffoldRotatron(env)
                     with ThreadPoolExecutor(max_workers=n_parallel) as executor:
                         conformers = list(
                             executor.map(
@@ -535,6 +524,8 @@ def optimize_scaffold(container=st):
                 else:
 
                     envs = gl.optimizers.split_environment(env, n_parallel)
+                    envs = [gl.optimizers.ScaffoldRotatron(e) for e in envs]
+
                     algo = _algorithms[algorithm]
                     st.write(
                         f"Split the optimization into {n_parallel} independent parallel optimizations."
@@ -555,6 +546,7 @@ def optimize_scaffold(container=st):
                     conformers = [out]
 
             else:
+                env = gl.optimizers.ScaffoldRotatron(env)
                 conformers = [
                     gl.optimizers.optimize(
                         S.copy(),
@@ -583,6 +575,23 @@ def export_scaffold(filename, export_conformers, container=st):
         for i, conformer in enumerate(conformers):
             conformer.to_pdb(f"{fname}_conf{i}.pdb")
             container.success(f"Model saved to {filename}_conf{i}.pdb")
+
+
+def shield_scaffold(repeats, edge_samples, angle_step, visualize, container=st):
+    S = st.session_state["scaffold_glycosylated"]
+    if S is None:
+        S = st.session_state["scaffold"]
+    if edge_samples == 0:
+        edge_samples = "all"
+
+    shield = gl.GlycoShield(S)
+    shield.simulate(
+        repeats=repeats,
+        angle_step=angle_step,
+        edge_samples=edge_samples,
+        visualize_conformations=visualize,
+    )
+    st.session_state["shield"] = shield
 
 
 def _dist_rot_hyperparams(container=st):
