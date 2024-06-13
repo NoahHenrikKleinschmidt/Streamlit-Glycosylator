@@ -164,14 +164,11 @@ def page_glycosylate_protein():
         )
 
         if select_main:
-            st.session_state["scaffold"] = conformers[conformer]
-            st.session_state["scaffold_glycosylated"] = conformers[conformer]
+            core.scaffold(conformers[conformer])
             columns[0].success("Main conformer selected.")
 
-        C = conformers[conformer]
-        v = C.py3dmol("cartoon", "spectrum")
         with columns[1]:
-            core.stmol.showmol(v.view)
+            core.show_scaffold_3d(core.scaffold_type(), S=conformers[conformer])
 
     _export_scaffold_subpage()
 
@@ -182,22 +179,19 @@ def _extend_glycans_subpage():
     st.write(
         "Extend any existing glycans by adding new residues to the end of the glycans. This can be done by providing a IUPAC sequence for the 'full' glycan that you want to build. The glycan model will be extended by adding the residues from the IUPAC sequence to the end of the current glycan model."
     )
-    if not st.session_state["scaffold"]:
+    if not core.scaffold():
         st.error(
             f"No {st.session_state['scaffold_type']} loaded. Please load a {st.session_state['scaffold_type']} first."
         )
         return
 
-    if st.session_state["scaffold_glycosylated"] is None:
-        st.session_state["scaffold_glycosylated"] = st.session_state["scaffold"].copy()
-    S = st.session_state["scaffold_glycosylated"]
-
-    if len(S.glycans) == 0:
+    if len(core.scaffold().glycans) == 0:
         st.error(
             f"No glycans found in the {st.session_state['scaffold_type']}. If you are sure there are glycans already, be sure to select the 'Infer existing glycans' option when loading the {st.session_state['scaffold_type']}."
         )
         return
 
+    S = core.scaffold()
     _glycans = {
         f"{glycan.id} @ {root.parent}": glycan
         for root, glycan in S.get_glycans().items()
@@ -333,12 +327,9 @@ def page_glycoshield():
         f"Simulate the shielding effect of the attached glycans on the {st.session_state['scaffold_type']} structure. This will compute an 'exposure' value for all {st.session_state['scaffold_type']} residues based on the shielding effect of the glycans. The exposure value is a measure of how much a residue is exposed to the solvent. The higher the value, the more exposed the residue is. The shielding effect is calculated by simulating the glycan conformations and measuring distances to the glycan residues. This will generate also a 3D visualization of the exposure values on the {st.session_state['scaffold_type']} structure."
     )
 
-    if (
-        st.session_state["scaffold_glycosylated"] is None
-        and len(st.session_state["scaffold"].glycans) == 0
-    ):
+    if core.scaffold() is None or len(core.scaffold().glycans) == 0:
         st.error(
-            f"No glycosylated {st.session_state['scaffold_type']} loaded. Please glycosylate a {st.session_state['scaffold_type']} first."
+            f"No glycosylated {st.session_state['scaffold_type']} loaded. Please glycosylate a {st.session_state['scaffold_type']} first or load one with attached glycans."
         )
         return
 
@@ -404,22 +395,19 @@ def _export_scaffold_subpage(container=st, prefix=None):
     container.markdown(f"## Export Glycosylated {prefix.title()}")
     container.write(f"You can export the glycosylated {prefix} model(s) to PDB.")
 
+    format = st.selectbox(
+        "Format",
+        ["PDB", "MOLFILE", "PICKLE"],
+        help="Select the format to export the glycan model to.",
+    )
+
     filename = container.text_input(
         "Filename",
-        value=f"my-glycosylated-{prefix}.pdb",
-        help="Enter the filename for the PDB file to save the glycosylated protein model to.",
+        placeholder=f"my-glycosylated-{prefix}.pdb",
+        help=f"Enter the filename for the PDB file to save the glycosylated {prefix} to.",
     )
 
-    export_conformers = container.checkbox(
-        "Export all conformers",
-        value=True,
-        help="Export all conformers to separate PDB files (they will inherit the same filename but add '_conf<N>' at the end).",
-    )
-
-    export_button = container.button("Export Model")
-
-    if export_button:
-        core.export_scaffold(filename, export_conformers)
+    core.export(prefix, filename, format)
 
 
 def _attach_glycan_subpage(container=st):
@@ -473,24 +461,20 @@ def _attach_glycan_subpage(container=st):
 def _export_glycan_subpage():
     st.markdown("---")
     st.markdown("## Export Glycan Model")
-    st.write("You can export the glycan model(s) to PDB.")
+    st.write("You can export the glycan model(s).")
 
+    format = st.selectbox(
+        "Format",
+        ["PDB", "MOLFILE", "IUPAC", "SMILES", "PICKLE"],
+        help="Select the format to export the glycan model to.",
+    )
     filename = st.text_input(
         "Filename",
-        value="my-glycan.pdb",
-        help="Enter the filename for the PDB file to save the glycan model to.",
+        placeholder="my-new-glycan.pdb",
+        help="Enter the filename for the glycan(s) to be saved to.",
     )
 
-    export_conformers = st.checkbox(
-        "Export all conformers",
-        value=True,
-        help="Export all conformers to separate PDB files (they will inherit the same filename but add '_conf<N>' at the end).",
-    )
-
-    export_button = st.button("Export Model")
-
-    if export_button:
-        core.export_glycan(filename, export_conformers)
+    core.export("glycan", filename, format)
 
 
 def _optimize_glycan_subpage():

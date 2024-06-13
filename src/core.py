@@ -1,16 +1,18 @@
 import glycosylator as gl
 import buildamol as bam
 import streamlit as st
+import os, zipfile
+from pathlib import Path
 import stmol
 from tempfile import NamedTemporaryFile
 from time import time
 
+# INITIALIZE SESSION STATE
 st.session_state.setdefault("glycans", {})
 st.session_state.setdefault("glycan_optimized", False)
-st.session_state.setdefault("conformers", [])
+st.session_state.setdefault("glycan_conformers", [])
 st.session_state.setdefault("glycan", None)
 st.session_state.setdefault("scaffold", None)
-st.session_state.setdefault("scaffold_glycosylated", None)
 st.session_state.setdefault("glyco_sites", [])
 st.session_state.setdefault("scaffold_type", "scaffold")
 st.session_state.setdefault("glycans_to_extend", [])
@@ -18,15 +20,46 @@ st.session_state.setdefault("available_sequons", gl.available_sequons())
 st.session_state.setdefault("scaffold_conformers", [])
 st.session_state.setdefault("scaffold_graph_edges", None)
 st.session_state.setdefault("shield", None)
+st.session_state.setdefault("env_hyperparameters", {})
 
-SUPPORTED_RESIDUES = set(
-    (
-        "ASN",
-        "SER",
-        "THR",
-        "CER",
-    )
-)
+
+def working_glycan(g=None):
+    if g is not None:
+        st.session_state["glycan"] = g
+    return st.session_state["glycan"]
+
+
+def scaffold(s=None):
+    if s is not None:
+        st.session_state["scaffold"] = s
+        st.session_state["glyco_sites"].clear()
+        st.session_state["glycans_to_extend"].clear()
+        st.session_state["scaffold_conformers"].clear()
+        reset_scaffold_graph()
+        st.session_state["shield"] = None
+        st.session_state["glycans_to_extend"].clear()
+        st.session_state["scaffold_type"] = "scaffold"
+    return st.session_state["scaffold"]
+
+
+def reset_scaffold_graph():
+    st.session_state["scaffold_graph_edges"] = None
+
+
+def scaffold_type(s=None):
+    if s is not None:
+        st.session_state["scaffold_type"] = s
+    return st.session_state["scaffold_type"]
+
+
+_SUPPORTED_RESIDUE_DICT = {
+    "Asparagine": "ASN",
+    "Serine": "SER",
+    "Threonine": "THR",
+    "Ceramide": "CER",
+}
+
+SUPPORTED_RESIDUES = set(_SUPPORTED_RESIDUE_DICT.values())
 
 
 def make_glycan(glycan_name, glycan_input):
@@ -80,12 +113,7 @@ def load_scaffold(scaffold_file, infer_existing_glycans, type: str = "scaffold")
             G.find_glycans()
             for glycan in G.glycans:
                 st.session_state["glycans"][glycan.id] = glycan
-
-        st.session_state["scaffold"] = G
-        st.session_state["scaffold_glycosylated"] = None
-        st.session_state["glyco_sites"] = []
-        st.session_state["scaffold_conformers"] = []
-        st.session_state["scaffold_graph_edges"] = None
+        scaffold(G)
         return G
     except Exception as e:
         st.error(f"Error: {e}")
@@ -93,7 +121,7 @@ def load_scaffold(scaffold_file, infer_existing_glycans, type: str = "scaffold")
 
 
 def extend_glycan(glycan_input):
-    G = st.session_state["glycan"]
+    G = working_glycan()
     try:
         G.extend_to(glycan_input)
         return G
@@ -104,40 +132,33 @@ def extend_glycan(glycan_input):
 
 def extend_glycans_on_scaffold(glycan_input):
 
-    S = st.session_state["scaffold_glycosylated"]
+    S = scaffold()
     for glycan in st.session_state["glycans_to_extend"]:
         try:
             S.extend_glycan(glycan, glycan_input.strip())
         except Exception as e:
             st.error(f"Error on glycan {glycan}: {e}")
             raise e
-    st.session_state["scaffold_graph_edges"] = None
+    reset_scaffold_graph()
 
 
 def show_glycan_2d3d(container=st):
-    G = st.session_state["glycan"]
+    G = working_glycan()
 
     e1, e2, e3 = container.columns((1, 2, 1))
-    # e1 = container.expander("2D SNFG Representation", expanded=False)
     e1.markdown("### 2D SNFG Representation")
     e1.pyplot(G.draw2d().figure)
 
-    # e2 = container.expander("3D Model", expanded=True)
     e2.markdown("### 3D Model")
     with e2:
         stmol.showmol(G.py3dmol().view)
 
-    # e3 = container.expander("Glycan Histogram", expanded=False)
     e3.markdown("### Glycan Histogram")
     e3.bar_chart(G.hist(), x="residue", y="count")
 
-    # columns[0].markdown("### 2D SNFG Representation")
-    # columns[1].markdown("### 3D Model")
-    # columns[1].plotly_chart(G.draw(atoms=False).figure, use_container_width=True)
-
 
 def show_scaffold_3d(type: str = None, S=None, container=st):
-    S = S or st.session_state["scaffold"]
+    S = S or scaffold()
     if S is None:
         return
     if type == "protein":
@@ -150,7 +171,7 @@ def show_scaffold_3d(type: str = None, S=None, container=st):
 
 
 def show_protein_snfg(container=st):
-    S = st.session_state["scaffold"]
+    S = scaffold()
     if S is None:
         return
     container.pyplot(S.snfg().fig)
@@ -206,7 +227,7 @@ def optimize_glycan(container=st):
     if optimize_button:
         with st.spinner("Optimizing glycan model..."):
 
-            G = st.session_state["glycan"]
+            G = working_glycan()
 
             graph = G.get_atom_graph()
             edges = G.get_residue_connections()
@@ -243,7 +264,7 @@ def optimize_glycan(container=st):
                     )
                     for i in range(n_conformers)
                 ]
-            st.session_state["conformers"] = conformers
+            st.session_state["glycan_conformers"] = conformers
             st.session_state["glycan_optimized"] = True
 
         with st.spinner("Drawing conformers..."):
@@ -257,39 +278,130 @@ def optimize_glycan(container=st):
                         v.add(conformer, style=s)
 
                     stmol.showmol(v.view)
-                # v = G.draw(atoms=False)
-                # for conformer in conformers:
-                #     v += conformer.draw(atoms=False, line_color="red")
-                # columns[1].plotly_chart(v.figure, use_container_width=True)
+
         return conformers
 
 
-def export_glycan(filename, export_conformers, container=st):
-    G = st.session_state["glycan"]
-    conformers = st.session_state.get("conformers", None)
+def export(prefix, filename, format, container=st):
+    if prefix == "glycan":
+        obj = working_glycan()
+        conformers = st.session_state["glycan_conformers"]
+    elif prefix == "scaffold":
+        obj = scaffold()
+        conformers = st.session_state.get("scaffold_conformers", None)
 
-    G.to_pdb(filename)
-    container.success(f"Model saved to {filename}.pdb")
+    if obj is None:
+        container.error(f"No {prefix} found.")
+        return
 
-    if export_conformers and conformers:
-        fname = ".".join(filename.split(".")[:-1])
-        for i, conformer in enumerate(conformers):
-            conformer.to_pdb(f"{fname}_conf{i}.pdb")
-            container.success(f"Model saved to {filename}_conf{i}.pdb")
+    format = format.lower().strip()
+    if len(filename) == 0:
+        container.error(
+            f"Please select a format and provide a filename to export the {prefix}."
+        )
+        return
+
+    filename = Path(filename)
+
+    zip_fname = filename.with_suffix(".zip")
+
+    can_make_zip = False
+    if format == "pdb":
+
+        data = bam.utils.pdb.encode_pdb(obj)
+        main_fname = filename.with_suffix(".pdb")
+
+        if conformers:
+            can_make_zip = True
+            files = []
+            for i, conformer in enumerate(conformers):
+                fname = filename.with_suffix(f".conf{i}.pdb")
+                conformer.to_pdb(fname)
+                files.append(fname)
+
+            create_zip_file(files, zip_fname)
+            for f in files:
+                os.remove(f)
+
+    elif format == "molfile":
+        obj.to_molfile("tmp.mol")
+        data = open("tmp.mol", "r").read()
+        os.remove("tmp.mol")
+        main_fname = filename.with_suffix(".mol")
+
+        if conformers:
+            can_make_zip = True
+            files = []
+
+            for i, conformer in enumerate(conformers):
+                fname = filename.with_suffix(f".conf{i}.mol")
+                conformer.to_molfile(fname)
+                files.append(fname)
+
+            create_zip_file(files, zip_fname)
+            for f in files:
+                os.remove(f)
+
+    elif format == "pickle":
+        obj.save("tmp.pkl")
+        data = open("tmp.pkl", "rb").read()
+        os.remove("tmp.pkl")
+        main_fname = filename.with_suffix(".pkl")
+
+        if conformers:
+            can_make_zip = True
+            files = []
+
+            for i, conformer in enumerate(conformers):
+                fname = filename.with_suffix(f".conf{i}.pkl")
+                conformer.save(fname)
+                files.append(fname)
+
+            create_zip_file(files, zip_fname)
+            for f in files:
+                os.remove(f)
+
+    elif format == "smiles":
+        data = obj.to_smiles()
+        main_fname = filename.with_suffix(".smi")
+
+        if conformers:
+            container.warning("SMILES format will not be exported for conformers.")
+
+    elif format == "iupac":
+        data = obj.to_iupac()
+        main_fname = filename.with_suffix(".txt")
+
+        if conformers:
+            container.warning("IUPAC format will not be exported for conformers.")
+
+    container.download_button(
+        "Download Main File",
+        data=data,
+        file_name=(main_fname.name),
+    )
+
+    if can_make_zip:
+        container.download_button(
+            "Download ZIP of all conformers",
+            data=open(zip_fname, "rb").read(),
+            file_name=(zip_fname.name),
+        )
+        os.remove(zip_fname)
+
+
+def create_zip_file(filenames, zip_filename):
+    with zipfile.ZipFile(zip_filename, "w") as zip_file:
+        for filename in filenames:
+            zip_file.write(filename)
 
 
 def attach_glycan():
 
-    G = st.session_state["glycan"]
-    S = st.session_state["scaffold"]
-    S_glyco = st.session_state["scaffold_glycosylated"]
-    if st.session_state["scaffold_glycosylated"] is None:
-        st.session_state["scaffold_glycosylated"] = st.session_state["scaffold"].copy()
-    elif S_glyco.id != S.id or S.count_atoms() > S_glyco.count_atoms():
-        S_glyco = S.copy()
-        st.session_state["scaffold_glycosylated"] = S_glyco
+    G = working_glycan()
+    S = scaffold()
 
-    sites = st.session_state.get("glyco_sites", [])
+    sites = st.session_state["glyco_sites"]
     if not sites:
         st.error(
             "No glycosylation sites found. Please identify glycosylation sites first."
@@ -325,23 +437,17 @@ def attach_glycan():
 
         to_delete = []
         for residue in residues:
-            anchor = S_glyco.get_atom(link._stitch_ref_atoms[0], residue=residue)
-            if len(S_glyco.get_neighbors(anchor)) == 0 or not link.can_be_target(
-                S_glyco, residue
-            ):
-                S_glyco.infer_bonds_for(residue)
-                if not S_glyco.get_hydrogen(anchor):
-                    hydrogenator.add_hydrogens(anchor, S_glyco)
+            anchor = S.get_atom(link._stitch_ref_atoms[0], residue=residue)
+            if len(S.get_neighbors(anchor)) == 0 or not link.can_be_target(S, residue):
+                S.infer_bonds_for(residue)
+                if not S.get_hydrogen(anchor):
+                    hydrogenator.add_hydrogens(anchor, S)
                     if (
-                        len(
-                            S_glyco.get_neighbors(
-                                anchor, filter=lambda x: x.element == "H"
-                            )
-                        )
+                        len(S.get_neighbors(anchor, filter=lambda x: x.element == "H"))
                         == 2
                     ):
-                        S_glyco.remove_atoms(S_glyco.get_hydrogen(anchor))
-                H = S_glyco.get_hydrogen(anchor)
+                        S.remove_atoms(S.get_hydrogen(anchor))
+                H = S.get_hydrogen(anchor)
                 if H is None:
                     st.error(
                         f"Could not find or make a suitable hydrogen for atom {anchor} for residue {residue} to attach glycan."
@@ -355,14 +461,14 @@ def attach_glycan():
         if len(residues) == 0:
             continue
 
-        S_glyco.attach(mol=G, residues=residues, inplace=True, chain="new")
+        S.attach(mol=G, residues=residues, inplace=True, chain="new")
 
     # make sure to reset since now the system has changed
-    st.session_state["scaffold_graph_edges"] = None
+    reset_scaffold_graph()
 
 
 def show_glycosylated_3d(type: str, container=st):
-    S = st.session_state["scaffold_glycosylated"]
+    S = scaffold()
     if S is None:
         return
     if type == "protein":
@@ -436,7 +542,7 @@ def optimize_scaffold(container=st):
     )
 
     hyperparam_ext = columns[1].expander("Hyperparameters", expanded=False)
-    st.session_state.setdefault("env_hyperparameters", {})
+
     if method == "atom distances":
         _dist_rot_hyperparams(hyperparam_ext)
     elif method == "total energy":
@@ -471,7 +577,7 @@ def optimize_scaffold(container=st):
             t1 = time()
             st.write("Preparing graph...")
             current_graph = st.session_state["scaffold_graph_edges"]
-            S = st.session_state["scaffold_glycosylated"]
+            S = scaffold()
             if not current_graph or current_graph[0] != S.id:
                 graph, edges = gl.optimizers.make_scaffold_graph(
                     S,
@@ -563,24 +669,8 @@ def optimize_scaffold(container=st):
         st.session_state["scaffold_conformers"] = conformers
 
 
-def export_scaffold(filename, export_conformers, container=st):
-    S = st.session_state["scaffold_glycosylated"]
-    conformers = st.session_state.get("scaffold_conformers", None)
-
-    S.to_pdb(filename)
-    container.success(f"Model saved to {filename}.pdb")
-
-    if export_conformers and conformers:
-        fname = ".".join(filename.split(".")[:-1])
-        for i, conformer in enumerate(conformers):
-            conformer.to_pdb(f"{fname}_conf{i}.pdb")
-            container.success(f"Model saved to {filename}_conf{i}.pdb")
-
-
 def shield_scaffold(repeats, edge_samples, angle_step, visualize, container=st):
-    S = st.session_state["scaffold_glycosylated"]
-    if S is None:
-        S = st.session_state["scaffold"]
+    S = scaffold()
     if edge_samples == 0:
         edge_samples = "all"
 
