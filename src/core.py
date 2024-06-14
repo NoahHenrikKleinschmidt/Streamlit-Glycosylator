@@ -563,8 +563,17 @@ def optimize_scaffold(container=st):
         "Clear Cache",
         help="Clear the cache of the scaffold graph (if you make changes to the scaffold and the graph is not adjusted automatically).",
     )
+    highlight_clashing = columns[0].button(
+        "Show Clashing Glycans",
+        help="Show a 3D view of all glycans that are clashing with the scaffold (red).",
+    )
+
     if clear_cache:
         st.session_state["scaffold_graph_edges"] = None
+
+    if highlight_clashing:
+        with columns[1]:
+            highlight_clashing_glycans()
 
     if optimize_button:
 
@@ -682,6 +691,27 @@ def shield_scaffold(repeats, edge_samples, angle_step, visualize, container=st):
         visualize_conformations=visualize,
     )
     st.session_state["shield"] = shield
+
+
+def highlight_clashing_glycans(container=st):
+    S = scaffold()
+    if S is None:
+        return
+    if st.session_state["scaffold_type"] == "protein":
+        v = S.py3dmol("cartoon", "gray", glycans=False)
+    elif st.session_state["scaffold_type"] == "membrane":
+        v = S.py3dmol("sphere", color="gray", glycans=False)
+    else:
+        v = S.py3dmol(color="gray", glycans=False)
+
+    for glycan in S.glycans:
+        if glycan.clashes_with_scaffold():
+            color = "red"
+        else:
+            color = "limegreen"
+        v.add(glycan, style={"stick": {"color": color}})
+    stmol.showmol(v.view)
+    container.info("Red glycans are clashing with the scaffold. Green glycans are not.")
 
 
 def _dist_rot_hyperparams(container=st):

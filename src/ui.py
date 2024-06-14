@@ -164,7 +164,7 @@ def page_glycosylate_protein():
         )
 
         if select_main:
-            core.scaffold(conformers[conformer])
+            st.session_state["scaffold"] = conformers[conformer]
             columns[0].success("Main conformer selected.")
 
         with columns[1]:
@@ -310,7 +310,6 @@ def page_glycosylate_membrane():
 
         if select_main:
             st.session_state["scaffold"] = conformers[conformer]
-            st.session_state["scaffold_glycosylated"] = conformers[conformer]
             columns[0].success("Main conformer selected.")
 
         C = conformers[conformer]
