@@ -167,6 +167,10 @@ def show_scaffold_3d(type: str = None, S=None, container=st):
         v = S.py3dmol("sphere", "beige")
     else:
         v = S.py3dmol()
+    v.view.startjs = v.view.startjs.replace(
+        """<div id="3dmolviewer_UNIQUEID"  style="position: relative; width: 600px; height: 500px;">""",
+        """<div id="3dmolviewer_UNIQUEID"  style="position: relative; width: 100%; height: 500px;">""",
+    )
     stmol.showmol(v.view)
 
 
@@ -484,6 +488,7 @@ def show_glycosylated_3d(type: str, container=st):
 
 def optimize_scaffold(container=st):
     columns = container.columns((1, 3))
+    columns[0].write("General Optimization Settings")
     methods = {
         "atom distances": gl.optimizers.DistanceRotatron,
         "total energy": gl.optimizers.ForceFieldRotatron,
@@ -528,11 +533,27 @@ def optimize_scaffold(container=st):
         value=1,
         help="Select the number of parallel optimizations to run. Parallel optimization can make the process faster but because the optimizations will be run independently and later combined it will be less accurate than optimizing the entire system at once (if only optimizing for one single conformation; this does not apply if using parallel optimization to generate multiple conformers).",
     )
-
+    columns[0].write("Optimization Scope Settings")
     only_clashing = columns[0].checkbox(
         "Only clashing glycans",
         value=True,
         help="Only optimize glycans that are clashing with the scaffold or themselves.",
+    )
+
+    subsample_edges = columns[0].slider(
+        "Subsample glycan edges",
+        min_value=-1,
+        max_value=10,
+        value=3,
+        help="Subsample the glycan edges to consider during optimization (subsampling will make the optimization run faster due to a smaller search space, but it is less accurate). If set to `0` **all** available edges are included. If set to `-1` **no** edges are included. Otherwise the edges are subsampled to the specified value.",
+    )
+
+    root_ancestor_depth = columns[0].slider(
+        "Root ancestor depth",
+        min_value=1,
+        max_value=4,
+        value=1,
+        help="This value can be used to also include up to N neighbors upstream of the scaffold-anchor atoms in the optimization. This will allow the system to also make adjustments to the scaffold itself and can help a great deal if the original orientation of the scaffold anchor residues does not allow for a good glycan placement. By setting this value to `1` the direct connection between anchor-atom and glycan root is also optimized. At values `higher than 1` the optimization will also include the neighbors of the anchor atoms in the scaffold. (Try experimenting if the optimization does not yield good results.)",
     )
 
     use_numba = columns[0].checkbox(
@@ -591,8 +612,9 @@ def optimize_scaffold(container=st):
                 graph, edges = gl.optimizers.make_scaffold_graph(
                     S,
                     only_clashing_glycans=only_clashing,
-                    include_root=True,
-                    slice=4,
+                    slice=subsample_edges,
+                    include_root=root_ancestor_depth >= 1,
+                    include_n_ancestors=root_ancestor_depth - 1,
                 )
                 st.session_state["scaffold_graph_edges"] = (
                     graph._molecule.id,
