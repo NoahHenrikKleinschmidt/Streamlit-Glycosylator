@@ -705,18 +705,18 @@ app_pages = {
 def build_ui():
     st.set_page_config(
         page_title="Glycosylator",
-        page_icon="/Users/noahhk/Library/CloudStorage/OneDrive-UniversitaetBern/Master Thesis/graphics/glycosylator_logo_v3_small.png",
+        page_icon="./src/light_logo.png",
         layout="wide",
         initial_sidebar_state="expanded",
     )
     if st.get_option("theme.primaryColor") == "#000000":
         st.sidebar.image(
-            "./dark_logo.png",
+            "./src/dark_logo.png",
             use_column_width=True,
         )
     else:
         st.sidebar.image(
-            "./light_logo.png",
+            "./src/light_logo.png",
             use_column_width=True,
         )
 
