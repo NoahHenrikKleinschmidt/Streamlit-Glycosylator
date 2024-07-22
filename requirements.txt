@@ -1,3 +1,5 @@
+ipython
+ipython-genutils
 stmol
 numpy
 pandas
