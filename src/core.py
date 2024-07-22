@@ -7,20 +7,50 @@ import stmol
 from tempfile import NamedTemporaryFile
 from time import time
 
+
 # INITIALIZE SESSION STATE
-st.session_state.setdefault("glycans", {})
-st.session_state.setdefault("glycan_optimized", False)
-st.session_state.setdefault("glycan_conformers", [])
-st.session_state.setdefault("glycan", None)
-st.session_state.setdefault("scaffold", None)
-st.session_state.setdefault("glyco_sites", [])
-st.session_state.setdefault("scaffold_type", "scaffold")
-st.session_state.setdefault("glycans_to_extend", [])
-st.session_state.setdefault("available_sequons", gl.available_sequons())
-st.session_state.setdefault("scaffold_conformers", [])
-st.session_state.setdefault("scaffold_graph_edges", None)
-st.session_state.setdefault("shield", None)
-st.session_state.setdefault("env_hyperparameters", {})
+def setup_session():
+    if "glycans" not in st.session_state:
+        st.session_state["glycans"] = {}
+    if "glycan_optimized" not in st.session_state:
+        st.session_state["glycan_optimized"] = False
+    if "glycan_conformers" not in st.session_state:
+        st.session_state["glycan_conformers"] = []
+    if "glycan" not in st.session_state:
+        st.session_state["glycan"] = None
+    if "scaffold" not in st.session_state:
+        st.session_state["scaffold"] = None
+    if "glyco_sites" not in st.session_state:
+        st.session_state["glyco_sites"] = []
+    if "scaffold_type" not in st.session_state:
+        st.session_state["scaffold_type"] = "scaffold"
+    if "glycans_to_extend" not in st.session_state:
+        st.session_state["glycans_to_extend"] = []
+    if "available_sequons" not in st.session_state:
+        st.session_state["available_sequons"] = gl.available_sequons()
+    if "scaffold_conformers" not in st.session_state:
+        st.session_state["scaffold_conformers"] = []
+    if "scaffold_graph_edges" not in st.session_state:
+        st.session_state["scaffold_graph_edges"] = None
+    if "shield" not in st.session_state:
+        st.session_state["shield"] = None
+    if "env_hyperparameters" not in st.session_state:
+        st.session_state["env_hyperparameters"] = {}
+
+    # somehow this does not work when using page refresh
+    # st.session_state.setdefault("glycans", {})
+    # st.session_state.setdefault("glycan_optimized", False)
+    # st.session_state.setdefault("glycan_conformers", [])
+    # st.session_state.setdefault("glycan", None)
+    # st.session_state.setdefault("scaffold", None)
+    # st.session_state.setdefault("glyco_sites", [])
+    # st.session_state.setdefault("scaffold_type", "scaffold")
+    # st.session_state.setdefault("glycans_to_extend", [])
+    # st.session_state.setdefault("available_sequons", gl.available_sequons())
+    # st.session_state.setdefault("scaffold_conformers", [])
+    # st.session_state.setdefault("scaffold_graph_edges", None)
+    # st.session_state.setdefault("shield", None)
+    # st.session_state.setdefault("env_hyperparameters", {})
 
 
 def working_glycan(g=None):
