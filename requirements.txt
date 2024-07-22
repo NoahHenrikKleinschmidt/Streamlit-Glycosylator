@@ -2,6 +2,6 @@ stmol
 numpy
 pandas
 py3Dmol
-rdkit
+rdkit==2024.3.2
 git+https://github.com/NoahHenrikKleinschmidt/buildamol.git@dev
 git+https://github.com/ibmm-unibe-ch/glycosylator.git@dev
