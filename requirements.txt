@@ -1,0 +1,7 @@
+git+https://github.com/NoahHenrikKleinschmidt/buildamol.git@dev
+git+https://github.com/ibmm-unibe-ch/glycosylator.git@dev
+stmol
+numpy
+pandas
+py3Dmol
+rdkit
