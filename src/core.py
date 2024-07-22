@@ -174,6 +174,28 @@ def show_scaffold_3d(type: str = None, S=None, container=st):
     stmol.showmol(v.view)
 
 
+def show_scaffold_3d_compare_optimized(type: str = None, S=None, container=st):
+    _S = scaffold()
+    if type == "protein":
+        v = _S.py3dmol("cartoon", "lightgray", glycan_color="blue")
+    elif type == "membrane":
+        v = _S.py3dmol("sphere", "beige", glycan_color="blue")
+    else:
+        v = _S.py3dmol(glycan_color="blue")
+    if S is not None:
+        for glycan in S.glycans:
+            v.add(glycan, style={"stick": {"color": "limegreen"}})
+
+    v.view.startjs = v.view.startjs.replace(
+        """<div id="3dmolviewer_UNIQUEID"  style="position: relative; width: 600px; height: 500px;">""",
+        """<div id="3dmolviewer_UNIQUEID"  style="position: relative; width: 100%; height: 500px;">""",
+    )
+    stmol.showmol(v.view)
+    container.info(
+        "Blue glycans are the original glycans. Green glycans are the optimized glycans."
+    )
+
+
 def show_protein_snfg(container=st):
     S = scaffold()
     if S is None:
@@ -274,7 +296,7 @@ def optimize_glycan(container=st):
         with st.spinner("Drawing conformers..."):
             if show_overlays:
                 with columns[1]:
-                    v = G.py3dmol(color="gray")
+                    v = G.py3dmol(color="lightgray")
                     s = dict(v.style)
                     s["stick"]["color"] = "red"
                     s["stick"]["opacity"] = 0.8
@@ -720,11 +742,11 @@ def highlight_clashing_glycans(container=st):
     if S is None:
         return
     if st.session_state["scaffold_type"] == "protein":
-        v = S.py3dmol("cartoon", "gray", glycans=False)
+        v = S.py3dmol("cartoon", "lightgray", glycans=False)
     elif st.session_state["scaffold_type"] == "membrane":
-        v = S.py3dmol("sphere", color="gray", glycans=False)
+        v = S.py3dmol("sphere", color="lightgray", glycans=False)
     else:
-        v = S.py3dmol(color="gray", glycans=False)
+        v = S.py3dmol(color="lightgray", glycans=False)
 
     for glycan in S.glycans:
         if glycan.clashes_with_scaffold():

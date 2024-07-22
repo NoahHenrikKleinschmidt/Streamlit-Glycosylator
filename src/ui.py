@@ -168,7 +168,9 @@ def page_glycosylate_protein():
             columns[0].success("Main conformer selected.")
 
         with columns[1]:
-            core.show_scaffold_3d(core.scaffold_type(), S=conformers[conformer])
+            core.show_scaffold_3d_compare_optimized(
+                core.scaffold_type(), S=conformers[conformer]
+            )
 
     _export_scaffold_subpage()
 
