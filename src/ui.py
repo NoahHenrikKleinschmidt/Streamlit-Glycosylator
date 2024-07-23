@@ -494,7 +494,7 @@ def _optimize_glycan_subpage():
         )
 
         columns = st.columns((1, 5))
-        conformers = st.session_state["conformers"]
+        conformers = st.session_state["glycan_conformers"]
         conformer = columns[0].selectbox(
             "Select conformer",
             range(len(conformers)),
@@ -507,6 +507,9 @@ def _optimize_glycan_subpage():
         )
         if select_main:
             st.session_state["glycan"] = conformers[conformer]
+            st.session_state["glycans"][conformers[conformer].id] = conformers[
+                conformer
+            ]
             columns[0].success("Main conformer selected.")
 
         G = st.session_state["glycan"]
