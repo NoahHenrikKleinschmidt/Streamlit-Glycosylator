@@ -381,7 +381,7 @@ def page_glycoshield():
             v = shield.py3dmol()
             core.stmol.showmol(v.view)
 
-        st.plotly_chart(shield.plot_exposure("plotly"))
+        st.plotly_chart(shield.exposure.plot("plotly"))
         e = st.expander("Exposure Values", expanded=False)
         e.markdown(
             "The exposure values for each residue in the protein. You can download the data as a CSV by clicking on the small icon in the top right corner of the table."
