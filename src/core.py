@@ -36,6 +36,8 @@ def setup_session():
         st.session_state["shield"] = None
     if "env_hyperparameters" not in st.session_state:
         st.session_state["env_hyperparameters"] = {}
+    if "algo_hyperparameters" not in st.session_state:
+        st.session_state["algo_hyperparameters"] = {}
 
     # somehow this does not work when using page refresh
     # st.session_state.setdefault("glycans", {})
@@ -110,7 +112,7 @@ def load_glycan(glycan_file, infer_bonds):
         with open(f, "w") as f:
             f.write(glycan_file.getvalue().decode("utf-8"))
 
-        G = gl.glycan(f, glycan_file.name)
+        G = gl.glycan(f.file.name, glycan_file.name)
         if infer_bonds or G.count_bonds() == 0:
             G.reindex()
             G.infer_bonds(restrict_residues=False)
