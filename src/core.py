@@ -108,11 +108,7 @@ def make_glycan(glycan_name, glycan_input):
 
 def load_glycan(glycan_file, infer_bonds):
     try:
-        f = NamedTemporaryFile(suffix=".pdb", delete=False)
-        with open(f, "w") as f:
-            f.write(glycan_file.getvalue().decode("utf-8"))
-
-        G = gl.glycan(f.file.name, glycan_file.name)
+        G = gl.Glycan._from_pdb_string(glycan_file.getvalue().decode("utf-8"), id=glycan_file.name)
         if infer_bonds or G.count_bonds() == 0:
             G.reindex()
             G.infer_bonds(restrict_residues=False)
@@ -120,8 +116,7 @@ def load_glycan(glycan_file, infer_bonds):
         st.session_state["glycan"] = G
         st.session_state["glycans"][G.id] = G
         st.session_state["glycan_optimized"] = False
-        f.close()
-
+    
         return G
     except Exception as e:
         st.error(f"Error: {e}")
