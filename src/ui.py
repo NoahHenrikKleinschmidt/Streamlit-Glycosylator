@@ -558,11 +558,15 @@ def _find_protein_glyco_sites_subpage(container=st):
     elif method == glycosite_find_modes[2]:
         residues = c1.text_area(
             "Residue numbers",
-            placeholder="18, 75, 342, ...",
-            help="Enter a list of residue numbers to identify glycosylation sites. Separate the numbers by commas or newlines.",
+            placeholder="18, 75, 342, ... or chain:18, chain:75, ...",
+            help="Enter a list of residue numbers to identify glycosylation sites. Separate the entries by commas or newlines.",
         )
         if residues:
-            residues = [int(i) for i in residues.replace(",", "\n").split("\n")]
+            residues = [i.split(":") for i in residues.replace(",", "\n").split("\n")]
+            residues = [
+                (i[0].strip(), int(i[1])) if len(i) == 2 else (None, int(i[0]))
+                for i in residues
+            ]
             st.session_state["glycosite_find_residues"] = residues
 
     find_button = c1.button("Find Glycosylation Sites")
@@ -582,7 +586,9 @@ def _find_protein_glyco_sites_subpage(container=st):
                 s.extend(sites[chain])
             st.session_state["glyco_sites"] = s
         elif method == glycosite_find_modes[2]:
-            sites = S.get_residues(*st.session_state["glycosite_find_residues"])
+            sites = []
+            for chain, res in st.session_state["glycosite_find_residues"]:
+                sites.extend(S.get_residues(res, chain=chain))
             st.session_state["glyco_sites"] = sites
 
     if show_sites:
